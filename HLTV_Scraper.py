@@ -1,5 +1,4 @@
 import csv
-import multiprocessing
 import signal
 from multiprocessing import Pool
 from requests.adapters import HTTPAdapter
@@ -8,7 +7,6 @@ import requests
 from bs4 import BeautifulSoup
 import ssl
 import time
-
 
 class SSLAdapter(HTTPAdapter):
     '''An HTTPS Transport Adapter that uses an arbitrary SSL version.'''
@@ -23,7 +21,6 @@ class SSLAdapter(HTTPAdapter):
                                        maxsize=maxsize,
                                        block=block,
                                        ssl_version=self.ssl_version)
-
 
 def getSoup(url):
     s = requests.Session()
@@ -94,14 +91,14 @@ def exportMatchStats(team):
         soup = getSoup(url + '&matchType=Lan')
         matches += getMatches(soup, 'lan')
 
-        myFile = open(team['name'] + '*match-stats.csv', 'w')
+        myFile = open(team['name'] + '=match-stats.csv', 'w')
         with myFile:
             # myFields = ['matchDate', 'event', 'map', 'score', 'opponent','opponentScore', 'result', 'type', 'matchId']
             myFields = matches[0].keys()
             writer = csv.DictWriter(myFile, fieldnames=myFields)
             writer.writeheader()
             writer.writerows(matches)
-        print(team + ' stats exported to csv')
+        print(team['name'] + ' stats exported to csv')
     except requests.ConnectionError as e:
         print(str(e))
         raise e
@@ -175,7 +172,7 @@ def exportPlayerStats(name, teamId):  # We will take their rating from HLTV
         url = 'https://www.hltv.org/stats/players/matches/{}/{}'.format(teamId, name)
         soup = getSoup(url)
         stats = getPlayerStats(soup)
-        myFile = open(name + '*player-stats.csv', 'w')
+        myFile = open(name + '=player-stats.csv', 'w')
         with myFile:
             myFields = stats[0].keys()
             writer = csv.DictWriter(myFile, fieldnames=myFields)
@@ -233,10 +230,11 @@ def getTop30Teams():
 def exportTeamRankList(teamDirectory):
     myFile = open('team-rankings.csv', 'w')
     with myFile:
-        myFields = ['name', 'rank', 'lineup']
+        myFields = ['name', 'teamId', 'rank', 'lineup']
         writer = csv.DictWriter(myFile, fieldnames=myFields)
         writer.writeheader()
-        writer.writerows(teamDirectory)
+        for key, val in teamDirectory.items():
+            writer.writerow(val)
     print("team-ranking")
 
 
@@ -264,27 +262,27 @@ def getRank(teamName, id):
         raise e
 
 
-def init_worker():
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-
 def main():
     try:
-        p = multiprocessing.Pool(10, init_worker)
+        p = Pool(10)
         teamDirectory = {}
         while True:
             cmd = input("1. Get stats of top 30 teams: \n2. Enter team to be fetched: \nq\n")
             if cmd == "1":
-                teamDirectory.update(getTop30Teams())
+                start_time = time.time()
+                teamDirectory = getTop30Teams()
                 listLineups = p.map(getLineupIds, teamDirectory.values())
                 x = 0
                 for team in teamDirectory.keys():
                     teamDirectory[team]['lineup'] = listLineups[x]
                     x += 1
+                exportTeamRankList(teamDirectory)
                 playerIdTuple = []
                 for lineup in listLineups:
                     playerIdTuple.extend([(name, playerId) for name, playerId in lineup.items()])
                 p.starmap(exportPlayerStats, playerIdTuple)
                 p.map(exportMatchStats, teamDirectory.values())
+                print("--- %s seconds ---" % (time.time() - start_time))
             elif cmd == "2":
                 teamName = input("Team name:")
                 teamId = input("Hltv team id:")
@@ -297,7 +295,6 @@ def main():
 
             else:
                 break
-        exportTeamRankList(teamDirectory)
     except(AttributeError, KeyError) as e:
         print("End process due to attribute error")
     except KeyboardInterrupt as e:
@@ -311,6 +308,5 @@ def main():
         p.join()
 
 
-start_time = time.time()
-main()
-print("--- %s seconds ---" % (time.time() - start_time))
+if __name__ == '__main__':
+    main()
